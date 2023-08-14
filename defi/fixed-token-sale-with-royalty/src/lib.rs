@@ -17,6 +17,23 @@ mod fixed_price_sale_with_royalty {
     /// This blueprint allows multiple NFTs to be sold at once as a collection instead of requiring that these NFTs
     /// be sold separately. In addition to that, this blueprint allows XRD payments as well as non-XRD payments for
     /// sellers who opt to accept non-XRD tokens.
+
+    enable_method_auth! { 
+        roles { 
+            admin => updatable_by: [OWNER]
+        },
+        methods { 
+            buy => PUBLIC;
+            price => PUBLIC;
+            is_sold => PUBLIC;
+            non_fungible_ids => PUBLIC;
+            non_fungible_addresses => PUBLIC;
+            cancel_sale => restrict_to: [admin, OWNER];
+            withdraw_payment => restrict_to: [admin, OWNER];
+            change_price => restrict_to: [admin, OWNER];
+        }
+    }
+    
     struct FixedPriceSaleWithRoyalty {
         /// These are the vaults where the NFTs will be stored. Since this blueprint allows for multiple NFTs to be sold
         /// at once, this HashMap is used to store all of these NFTs with the hashmap key being the resource address of
@@ -60,7 +77,7 @@ mod fixed_price_sale_with_royalty {
         ///
         /// # Arguments:
         ///
-        /// * `non_fungible_tokens` (Vec<Bucket>) - A vector of buckets of the non-fungible tokens that the instantiator
+        /// * `non_fungible_tokens` (Vec<NonFungibleBucket>) - A vector of buckets of the non-fungible tokens that the instantiator
         /// wishes to sell.
         /// * `accepted_payment_token` (ResourceAddress) - Payments may be accepted in XRD or non-XRD tokens. This
         /// argument specifies the resource address of the token the instantiator wishes to accept for payment.
@@ -74,19 +91,19 @@ mod fixed_price_sale_with_royalty {
         /// * `Bucket` - A bucket containing an ownership badge which entitles the holder to the assets in this
         /// component.
         pub fn instantiate_fixed_price_sale_with_royalty(
-            non_fungible_tokens: Vec<Bucket>,
+            non_fungible_tokens: Vec<NonFungibleBucket>,
             accepted_payment_token: ResourceAddress,
             price: Decimal,
             royalties: Vec<RoyaltyShare>,
         ) -> (ComponentAddress, Bucket) {
             // Performing checks to ensure that the creation of the component can go through
-            assert!(
-                !non_fungible_tokens.iter().any(|x| !matches!(
-                    borrow_resource_manager!(x.resource_address()).resource_type(),
-                    ResourceType::NonFungible { id_type: _ }
-                )),
-                "[Instantiation]: Can not perform a sale for fungible tokens."
-            );
+            // assert!(
+            //     !non_fungible_tokens.iter().any(|x| !matches!(
+            //         borrow_resource_manager!(x.resource_address()).resource_type(),
+            //         ResourceType::NonFungible { id_type: _ }
+            //     )),
+            //     "[Instantiation]: Can not perform a sale for fungible tokens."
+            // );
             assert!(
                 !matches!(
                     borrow_resource_manager!(accepted_payment_token).resource_type(),
@@ -256,7 +273,7 @@ mod fixed_price_sale_with_royalty {
         ///
         /// # Returns:
         ///
-        /// * `Vec<Bucket>` - A vector of buckets of the non-fungible tokens which were being sold.
+        /// * `Vec<NonFungibleBucket>` - A vector of buckets of the non-fungible tokens which were being sold.
         ///
         /// # Note:
         ///
@@ -264,7 +281,7 @@ mod fixed_price_sale_with_royalty {
         /// * There is no danger in not checking if the sale has occurred or not and attempting to return the tokens
         /// anyway. This is because we literally lose the tokens when they're sold so even if we attempt to give them
         /// back after they'd been sold we return a vector of empty buckets.
-        pub fn cancel_sale(&mut self) -> Vec<Bucket> {
+        pub fn cancel_sale(&mut self) -> Vec<NonFungibleBucket> {
             // Checking if the tokens have been sold or not.
             assert!(
                 !self.is_sold(),
@@ -303,7 +320,7 @@ mod fixed_price_sale_with_royalty {
         /// * There is no danger in not checking if the sale has occurred or not and attempting to return the tokens
         /// anyway. If we do not have the payment tokens then the worst case scenario would be that an empty bucket is
         /// returned. This is bad from a UX point of view but does not pose any security risk.
-        pub fn withdraw_payment(&mut self) -> Bucket {
+        pub fn withdraw_payment(&mut self) -> FungibleBucket {
             // Checking if the tokens have been sold or not.
             assert!(
                 self.is_sold(),

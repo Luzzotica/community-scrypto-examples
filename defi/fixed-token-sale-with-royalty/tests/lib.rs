@@ -1,24 +1,19 @@
-
-
-
 #[cfg(test)]
 mod tests {
 		use scrypto::prelude::*;
 		use scrypto_unit::*;
 		use transaction::builder::ManifestBuilder;
-		use fixed_price_sale_with_royalty::RoyaltyShare;
+		// use fixed_price_sale_with_royalty::RoyaltyShare;
 
 		#[test]
 		fn test_fixed_token_sale_with_royalty() {
-		
-
 				// Set up environment.
 				let mut test_runner = TestRunner::builder().build();
 
 				// Create an account
 				let (public_key, _private_key, account_component) = test_runner.new_allocated_account();
-				let (public_key2, _private_key2, account_component2) = test_runner.new_allocated_account();
-				let (public_key3, _private_key3, account_component3) = test_runner.new_allocated_account();
+				// let (public_key2, _private_key2, account_component2) = test_runner.new_allocated_account();
+				// let (public_key3, _private_key3, account_component3) = test_runner.new_allocated_account();
 
 				// Publish package
 				let package_address = test_runner.compile_and_publish(this_package!());
@@ -43,11 +38,11 @@ mod tests {
 														bucket2,
 													],
 													RADIX_TOKEN,
-													dec!("1"),
-													[
-														RoyaltyShare { account_component: account_component, percentage: dec!("0.1") },
-														RoyaltyShare { account_component: account_component2, percentage: dec!("0.1") },
-													]
+													dec!("1")
+													// [
+													// 	RoyaltyShare { account_component: account_component, percentage: dec!("0.1") },
+													// 	RoyaltyShare { account_component: account_component2, percentage: dec!("0.1") },
+													// ]
 												),
 										)
 								})
