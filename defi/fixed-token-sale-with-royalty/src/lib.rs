@@ -10,15 +10,7 @@ pub struct RoyaltyShare {
 
 #[blueprint]
 mod fixed_price_sale_with_royalty {
-    /// This blueprint defines the state and logic involved in a fixed-price non-fungible token sale. People who
-    /// instantiate components from this blueprint, signify their intent at selling their NFT(s) at a fixed price of
-    /// their choosing and for a token of their choosing.
-    ///
-    /// This blueprint allows multiple NFTs to be sold at once as a collection instead of requiring that these NFTs
-    /// be sold separately. In addition to that, this blueprint allows XRD payments as well as non-XRD payments for
-    /// sellers who opt to accept non-XRD tokens.
-
-    enable_method_auth! { 
+    enable_method_auth!{ 
         roles { 
             admin => updatable_by: [OWNER]
         },
@@ -33,7 +25,6 @@ mod fixed_price_sale_with_royalty {
             change_price => restrict_to: [admin, OWNER];
         }
     }
-    
     struct FixedPriceSaleWithRoyalty {
         /// These are the vaults where the NFTs will be stored. Since this blueprint allows for multiple NFTs to be sold
         /// at once, this HashMap is used to store all of these NFTs with the hashmap key being the resource address of
@@ -167,6 +158,7 @@ mod fixed_price_sale_with_royalty {
             // of the NFTs. This ownership badge can be used to either withdraw the funds from the token sale or the
             // NFTs if the seller is no longer interested in selling their tokens.
             let ownership_badge: Bucket = ResourceBuilder::new_fungible()
+                .divisbility(DIVISIBILITY_NONE)
                 .metadata("name", "Ownership Badge")
                 .metadata(
                     "description",
@@ -177,27 +169,35 @@ mod fixed_price_sale_with_royalty {
 
             // Setting up the access rules for the component methods such that 
             // only the owner of the ownership badge can make calls to the protected methods.
-            let access_rule: AccessRule = rule!(require(ownership_badge.resource_address()));
-            let access_rules_config: AccessRulesConfig = AccessRulesConfig::new()
-                .method("cancel_sale", access_rule.clone(), AccessRule::DenyAll)
-                .method("change_price", access_rule.clone(), AccessRule::DenyAll)
-                .method("withdraw_payment", access_rule.clone(), AccessRule::DenyAll)
-                .default(rule!(allow_all), AccessRule::DenyAll);
+            // let access_rule: AccessRule = rule!(require(ownership_badge.resource_address()));
+            // let access_rules_config: AccessRulesConfig = AccessRulesConfig::new()
+            //     .method("cancel_sale", access_rule.clone(), AccessRule::DenyAll)
+            //     .method("change_price", access_rule.clone(), AccessRule::DenyAll)
+            //     .method("withdraw_payment", access_rule.clone(), AccessRule::DenyAll)
+            //     .default(rule!(allow_all), AccessRule::DenyAll);
 
             // Instantiating the fixed price sale component
             let fixed_price_sale_with_royalty: FixedPriceSaleWithRoyaltyComponent = Self {
-                nft_vaults: nft_vaults,
+                nft_vaults,
                 payment_vault: Vault::new(accepted_payment_token),
-                accepted_payment_token: accepted_payment_token,
-                price: price,
+                accepted_payment_token,
+                price,
                 royalty_badge_resource_address: royalty_badge_resource,
                 royalties: HashMap::new(),
             }
-            .instantiate();
-            // fixed_price_sale.add_access_check(access_rules);
-            let fixed_price_sale_with_royalty: ComponentAddress = fixed_price_sale_with_royalty.globalize_with_access_rules(access_rules_config);
+            .instantiate()
+            .prepare_to_globalize(OwnerRole::None)
+            .roles(
+                roles!(
+                    admin => rule!(require(ownership_badge.resource_address()));
+                )
+            )
+            .globalize();
 
-            return (fixed_price_sale_with_royalty, ownership_badge);
+            (
+              fixed_price_sale_with_royalty, 
+              ownership_badge
+            )
         }
 
         /// Used for buying the NFT(s) controlled by this component.
