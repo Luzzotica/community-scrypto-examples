@@ -12,7 +12,7 @@ pub struct RoyaltyShare {
 mod fixed_price_sale_with_royalty {
     enable_method_auth!{ 
         roles { 
-            admin => updatable_by: [OWNER]
+            admin => updatable_by: [OWNER];
         },
         methods { 
             buy => PUBLIC;
@@ -29,11 +29,11 @@ mod fixed_price_sale_with_royalty {
         /// These are the vaults where the NFTs will be stored. Since this blueprint allows for multiple NFTs to be sold
         /// at once, this HashMap is used to store all of these NFTs with the hashmap key being the resource address of
         /// these NFTs if they are not all of the same _kind_.
-        nft_vaults: HashMap<ResourceAddress, Vault>,
+        nft_vaults: HashMap<ResourceAddress, NonFungibleVault>,
 
         /// This is the vault which stores the payment of the NFTs once it has been made. This vault may contain XRD or
         /// other tokens depending on the `ResourceAddress` of the accepted payment token specified by the instantiator
-        payment_vault: Vault,
+        payment_vault: FungibleVault,
 
         /// This blueprint accepts XRD as well as non-XRD payments. This variable here is the resource address of the
         /// fungible token that will be used for payments to the component.
@@ -45,11 +45,11 @@ mod fixed_price_sale_with_royalty {
 
         /// This is the NFT that is minted for each person who has claim to some royalty when the NFT sells.
         /// This NFT is minted when the blueprint is initialized as a component.
-        royalty_badge_resource_address: ResourceAddress,
+        royalty_badge_resource_manager: ResourceManager,
 
         /// The mapping of an NFT Royalty badge to the vault that contains the funds paid out as royalties from the sale
         /// of the assets.
-        royalties: HashMap<NonFungibleLocalId, Vault>,
+        royalties: HashMap<NonFungibleLocalId, FungibleVault>,
     }
 
     impl FixedPriceSaleWithRoyalty {
@@ -86,7 +86,7 @@ mod fixed_price_sale_with_royalty {
             accepted_payment_token: ResourceAddress,
             price: Decimal,
             royalties: Vec<RoyaltyShare>,
-        ) -> (ComponentAddress, Bucket) {
+        ) -> (Global<FixedPriceSaleWithRoyalty>, Bucket) {
             // Performing checks to ensure that the creation of the component can go through
             // assert!(
             //     !non_fungible_tokens.iter().any(|x| !matches!(
@@ -97,7 +97,7 @@ mod fixed_price_sale_with_royalty {
             // );
             assert!(
                 !matches!(
-                    borrow_resource_manager!(accepted_payment_token).resource_type(),
+                    ResourceManager::from(accepted_payment_token).resource_type(),
                     ResourceType::NonFungible { id_type: _ }
                 ),
                 "[Instantiation]: Only payments of fungible resources are accepted."
@@ -120,24 +120,25 @@ mod fixed_price_sale_with_royalty {
             // Create a new HashMap of vaults and aggregate all of the tokens in the buckets into the vaults of this
             // HashMap. This means that if somebody passes multiple buckets of the same resource, then they would end
             // up in the same vault.
-            let mut nft_vaults: HashMap<ResourceAddress, Vault> = HashMap::new();
+            let mut nft_vaults: HashMap<ResourceAddress, NonFungibleVault> = HashMap::new();
             for bucket in non_fungible_tokens.into_iter() {
                 nft_vaults
                     .entry(bucket.resource_address())
-                    .or_insert(Vault::new(bucket.resource_address()))
+                    .or_insert(NonFungibleVault::new(bucket.resource_address()))
                     .put(bucket)
             }
 
             // Creating the royalty NFT which we will be using as a badge to authenticate royalty owners and setting
             // the auth of the royalty badge such that it can be moved around but can only be minted and burned by
             // the internal admin badge.
-            let royalty_badge_resource: ResourceAddress =
-                ResourceBuilder::new_uuid_non_fungible::<RoyaltyShare>()
-                    .metadata("name", "Royalty Badge")
-                    .metadata(
-                        "description",
-                        "A non-fungible-token used to claim royalties.",
-                    )
+            let royalty_badge_manager: ResourceManager =
+                ResourceBuilder::new_ruid_non_fungible::<RoyaltyShare>(OwnerRole::None)
+                    .metadata(metadata! (
+                      init {
+                        "name" => "Royalty Badge", locked;
+                        "description" => "A non-fungible-token used to claim royalties.", locked;
+                      }
+                    ))
                     // .mintable(
                     //     rule!(require(internal_admin_badge.resource_address())),
                     //     Mutability::LOCKED,
@@ -147,9 +148,9 @@ mod fixed_price_sale_with_royalty {
             // Create the map from royalty badges to vaults and mint the royalty badges.
             let mut royalty_map: HashMap<NonFungibleLocalId, Vault> = HashMap::new();
             for royalty in royalties.into_iter() {
-              let royalty_badge: Bucket = borrow_resource_manager!(royalty_badge_resource).mint_uuid_non_fungible(
+              let royalty_badge: NonFungibleBucket = NonFungibleBucket(royalty_badge_manager.mint_ruid_non_fungible(
                 royalty
-              );
+              ));
               royalty_map.insert(royalty_badge.non_fungible_local_id(), Vault::new(accepted_payment_token));
             }
 
@@ -157,14 +158,15 @@ mod fixed_price_sale_with_royalty {
             // from them and they're given an ownership NFT which is used to authenticate them and as proof of ownership
             // of the NFTs. This ownership badge can be used to either withdraw the funds from the token sale or the
             // NFTs if the seller is no longer interested in selling their tokens.
-            let ownership_badge: Bucket = ResourceBuilder::new_fungible()
-                .divisbility(DIVISIBILITY_NONE)
-                .metadata("name", "Ownership Badge")
-                .metadata(
-                    "description",
-                    "An ownership badge used to authenticate the owner of the NFT(s).",
-                )
-                .metadata("symbol", "OWNER")
+            let ownership_badge: Bucket = ResourceBuilder::new_fungible(OwnerRole::None)
+                .divisibility(DIVISIBILITY_NONE)
+                .metadata(metadata! (
+                  init {
+                    "name" => "Ownership Badge", locked;
+                    "symbol" => "OWNER", locked;
+                    "description" => "An ownership badge used to authenticate the owner of the NFT(s).", locked;
+                  }
+                ))
                 .mint_initial_supply(1);
 
             // Setting up the access rules for the component methods such that 
@@ -177,12 +179,12 @@ mod fixed_price_sale_with_royalty {
             //     .default(rule!(allow_all), AccessRule::DenyAll);
 
             // Instantiating the fixed price sale component
-            let fixed_price_sale_with_royalty: FixedPriceSaleWithRoyaltyComponent = Self {
+            let fixed_price_sale_with_royalty = Self {
                 nft_vaults,
-                payment_vault: Vault::new(accepted_payment_token),
+                payment_vault: FungibleVault::new(accepted_payment_token),
                 accepted_payment_token,
                 price,
-                royalty_badge_resource_address: royalty_badge_resource,
+                royalty_badge_resource_manager: royalty_badge_manager,
                 royalties: HashMap::new(),
             }
             .instantiate()
@@ -217,7 +219,7 @@ mod fixed_price_sale_with_royalty {
         /// # Returns:
         ///
         /// * `Vec<Bucket>` - A vector of buckets of the non-fungible tokens which were being sold.
-        pub fn buy(&mut self, mut payment: Bucket) -> Vec<Bucket> {
+        pub fn buy(&mut self, mut payment: FungibleBucket) -> Vec<NonFungibleBucket> {
             // Checking if the appropriate amount of the payment token was provided before approving the token sale
             assert_eq!(
                 payment.resource_address(),
@@ -237,10 +239,8 @@ mod fixed_price_sale_with_royalty {
             let total_royalties_paid: Decimal = Decimal::zero();
 
             // Loop through royalty percentages and pay out the royalties
-            let royalty_resource_manager =
-                borrow_resource_manager!(self.royalty_badge_resource_address);
             for (non_fungible_id, vault) in &mut self.royalties {
-                let royalty: RoyaltyShare = royalty_resource_manager.get_non_fungible_data(&non_fungible_id);
+                let royalty: RoyaltyShare = self.royalty_badge_resource_manager.get_non_fungible_data(&non_fungible_id);
                 let amount_owed: Decimal = royalty.percentage * payment.amount();
                 vault.put(payment.take(amount_owed));
             }
@@ -252,7 +252,7 @@ mod fixed_price_sale_with_royalty {
             // tokens from the payment
             let resource_addresses: Vec<ResourceAddress> =
                 self.nft_vaults.keys().cloned().collect();
-            let mut tokens: Vec<Bucket> = vec![payment];
+            let mut tokens: Vec<NonFungibleBucket> = Vec::new();
             for resource_address in resource_addresses.into_iter() {
                 tokens.push(
                     self.nft_vaults
@@ -291,7 +291,7 @@ mod fixed_price_sale_with_royalty {
             // Taking out all of the tokens from the vaults and returning them back to the caller.
             let resource_addresses: Vec<ResourceAddress> =
                 self.nft_vaults.keys().cloned().collect();
-            let mut tokens: Vec<Bucket> = Vec::new();
+            let mut tokens: Vec<NonFungibleBucket> = Vec::new();
             for resource_address in resource_addresses.into_iter() {
                 tokens.push(
                     self.nft_vaults

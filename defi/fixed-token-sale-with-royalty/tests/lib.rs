@@ -3,7 +3,7 @@ mod tests {
 		use scrypto::prelude::*;
 		use scrypto_unit::*;
 		use transaction::builder::ManifestBuilder;
-		// use fixed_price_sale_with_royalty::RoyaltyShare;
+		use fixed_price_sale_with_royalty::RoyaltyShare;
 
 		#[test]
 		fn test_fixed_token_sale_with_royalty() {
@@ -12,7 +12,7 @@ mod tests {
 
 				// Create an account
 				let (public_key, _private_key, account_component) = test_runner.new_allocated_account();
-				// let (public_key2, _private_key2, account_component2) = test_runner.new_allocated_account();
+				let (public_key2, _private_key2, account_component2) = test_runner.new_allocated_account();
 				// let (public_key3, _private_key3, account_component3) = test_runner.new_allocated_account();
 
 				// Publish package
@@ -23,31 +23,31 @@ mod tests {
 				let nfts2 = test_runner.create_non_fungible_resource(account_component);
 
 				// Instantiate the contract
-				let transaction1 = ManifestBuilder::new()
-						.withdraw_from_account(account_component, nfts1, dec!("1"))
-						.withdraw_from_account(account_component, nfts2, dec!("2"))
-						.take_from_worktop(nfts1, |builder, bucket1| {
-								builder.take_from_worktop(nfts2, |builder, bucket2| {
-										builder.call_function(
-												package_address,
-												"FixedPriceSaleWithRoyalty",
-												"instantiate_fixed_price_sale_with_royalty",
-												manifest_args!(
-													[
-														bucket1,
-														bucket2,
-													],
-													RADIX_TOKEN,
-													dec!("1")
-													// [
-													// 	RoyaltyShare { account_component: account_component, percentage: dec!("0.1") },
-													// 	RoyaltyShare { account_component: account_component2, percentage: dec!("0.1") },
-													// ]
-												),
-										)
-								})
-						})
-						.build();
+        let transaction1 = ManifestBuilder::new()
+          .withdraw_from_account(account_component, nfts1, dec!("1"))
+          .withdraw_from_account(account_component, nfts2, dec!("2"))
+          .take_all_from_worktop(nfts1, "nfts1")
+          .take_all_from_worktop(nfts2, "nfts2")
+          .call_function_with_name_lookup(
+            package_address,
+            "FixedPriceSaleWithRoyalty",
+            "instantiate_fixed_price_sale_with_royalty",
+            |lookup| (
+              [
+                lookup.bucket("nfts1"),
+                lookup.bucket("nfts2"),
+              ],
+              XRD,
+              dec!("1"),
+              [
+                // (account_component, dec!("0.1")),
+                // (account_component2, dec!("0.1")),
+                RoyaltyShare { account_component, percentage: dec!("0.1") },
+                RoyaltyShare { account_component: account_component2, percentage: dec!("0.1") },
+              ]
+            )
+          )
+          .build();
 				let receipt1 = test_runner.execute_manifest_ignoring_fee(
 						transaction1,
 						vec![NonFungibleGlobalId::from_public_key(&public_key)],
