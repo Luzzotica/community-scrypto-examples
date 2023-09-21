@@ -3,9 +3,9 @@ use scrypto::prelude::*;
 #[derive(NonFungibleData, ScryptoSbor)]
 pub struct RoyaltyShare {
     /// This is the account component that can claim the royalty.
-    account_component: ComponentAddress,
+    pub account_component: ComponentAddress,
     /// This is the percentage of the sale price that will be paid to the royalty recipient.
-    percentage: Decimal,
+    pub percentage: Decimal,
 }
 
 #[blueprint]
@@ -85,7 +85,8 @@ mod fixed_price_sale_with_royalty {
             non_fungible_tokens: Vec<NonFungibleBucket>,
             accepted_payment_token: ResourceAddress,
             price: Decimal,
-            royalties: Vec<RoyaltyShare>,
+            royalty_accounts: Vec<ComponentAddress>,
+            royalty_percents: Vec<Decimal>
         ) -> (Global<FixedPriceSaleWithRoyalty>, Bucket) {
             // Performing checks to ensure that the creation of the component can go through
             // assert!(
@@ -107,12 +108,16 @@ mod fixed_price_sale_with_royalty {
                 "[Instantiation]: The tokens can not be sold for a negative amount."
             );
             assert!(
-                !royalties.iter().any(|x| x.percentage < Decimal::zero()),
+                !royalty_percents.iter().any(|&x| x < Decimal::zero()),
                 "[Instantiation]: Royalty percentages can not be negative."
             );
             assert!(
-                royalties.iter().fold(Decimal::zero(), |acc, x| acc + x.percentage) <= Decimal::from(100),
+              royalty_percents.iter().fold(Decimal::zero(), |acc, &x| acc + x) <= Decimal::from(100),
                 "[Instantiation]: Royalty percentages can not add up to more than 100%."
+            );
+            assert!(
+              royalty_accounts.len() == royalty_percents.len(),
+                "[Instantiation]: Royalty accounts and percents must be the same length."
             );
 
             // At this point we know that the component creation can go through.
@@ -147,6 +152,13 @@ mod fixed_price_sale_with_royalty {
 
             // Create the map from royalty badges to vaults and mint the royalty badges.
             let mut royalty_map: HashMap<NonFungibleLocalId, Vault> = HashMap::new();
+            let mut royalties: Vec<RoyaltyShare> = Vec::new();
+            for (account_component, percentage) in royalty_accounts
+              .into_iter()
+              .zip(royalty_percents.into_iter()) {
+              let royalty: RoyaltyShare = RoyaltyShare { account_component, percentage };
+              royalties.push(royalty);
+            }
             for royalty in royalties.into_iter() {
               let royalty_badge: NonFungibleBucket = NonFungibleBucket(royalty_badge_manager.mint_ruid_non_fungible(
                 royalty

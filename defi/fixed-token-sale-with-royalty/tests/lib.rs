@@ -3,7 +3,6 @@ mod tests {
 		use scrypto::prelude::*;
 		use scrypto_unit::*;
 		use transaction::builder::ManifestBuilder;
-		use fixed_price_sale_with_royalty::RoyaltyShare;
 
 		#[test]
 		fn test_fixed_token_sale_with_royalty() {
@@ -40,20 +39,38 @@ mod tests {
               XRD,
               dec!("1"),
               [
+                account_component,
+                account_component2
+              ],
+              [
+                dec!("0.1"),
+                dec!("0.2"),
+              ],
+              // [
                 // (account_component, dec!("0.1")),
                 // (account_component2, dec!("0.1")),
-                RoyaltyShare { account_component, percentage: dec!("0.1") },
-                RoyaltyShare { account_component: account_component2, percentage: dec!("0.1") },
-              ]
+                // RoyaltyShare { account_component, percentage: dec!("0.1") },
+                // RoyaltyShare { account_component: account_component2, percentage: dec!("0.1") },
+              // ]
             )
           )
           .build();
+        
 				let receipt1 = test_runner.execute_manifest_ignoring_fee(
 						transaction1,
 						vec![NonFungibleGlobalId::from_public_key(&public_key)],
 				);
-				println!("{:?}\n", receipt1);
+				println!("{:?}swag\n", receipt1);
 				receipt1.expect_commit_success();
+
+        // Access Control, should not be able to call cancel_sale, withdraw_payment, or change_price if I am not the owner
+
+        // Instantiate
+        // payment token must be fungible
+        // price must be greater than or equal to 0
+        // royalty shares must be less than or equal to 1
+        // royalty percents must never be less than 1
+        // 
 
 				// let mut access_rules = BTreeMap::new();
 				// access_rules.insert(ResourceMethodAuthKey::Withdraw, (rule!(allow_all), LOCKED));
