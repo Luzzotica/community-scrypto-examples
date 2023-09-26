@@ -1,7 +1,7 @@
 use scrypto::prelude::*;
 
 #[derive(NonFungibleData, ScryptoSbor)]
-pub struct RoyaltyShare {
+struct RoyaltyShare {
     /// This is the account component that can claim the royalty.
     pub account_component: ComponentAddress,
     /// This is the percentage of the sale price that will be paid to the royalty recipient.
@@ -10,11 +10,11 @@ pub struct RoyaltyShare {
 
 #[blueprint]
 mod fixed_price_sale_with_royalty {
-    enable_method_auth!{ 
-        roles { 
+    enable_method_auth! {
+        roles {
             admin => updatable_by: [OWNER];
         },
-        methods { 
+        methods {
             buy => PUBLIC;
             price => PUBLIC;
             is_sold => PUBLIC;
@@ -25,6 +25,7 @@ mod fixed_price_sale_with_royalty {
             change_price => restrict_to: [admin, OWNER];
         }
     }
+
     struct FixedPriceSaleWithRoyalty {
         /// These are the vaults where the NFTs will be stored. Since this blueprint allows for multiple NFTs to be sold
         /// at once, this HashMap is used to store all of these NFTs with the hashmap key being the resource address of
@@ -86,8 +87,8 @@ mod fixed_price_sale_with_royalty {
             accepted_payment_token: ResourceAddress,
             price: Decimal,
             royalty_accounts: Vec<ComponentAddress>,
-            royalty_percents: Vec<Decimal>
-        ) -> (Global<FixedPriceSaleWithRoyalty>, Bucket) {
+            royalty_percents: Vec<Decimal>,
+        ) -> (Global<FixedPriceSaleWithRoyalty>, FungibleBucket) {
             // Performing checks to ensure that the creation of the component can go through
             // assert!(
             //     !non_fungible_tokens.iter().any(|x| !matches!(
@@ -112,11 +113,14 @@ mod fixed_price_sale_with_royalty {
                 "[Instantiation]: Royalty percentages can not be negative."
             );
             assert!(
-              royalty_percents.iter().fold(Decimal::zero(), |acc, &x| acc + x) <= Decimal::from(100),
+                royalty_percents
+                    .iter()
+                    .fold(Decimal::zero(), |acc, &x| acc + x)
+                    <= Decimal::from(100),
                 "[Instantiation]: Royalty percentages can not add up to more than 100%."
             );
             assert!(
-              royalty_accounts.len() == royalty_percents.len(),
+                royalty_accounts.len() == royalty_percents.len(),
                 "[Instantiation]: Royalty accounts and percents must be the same length."
             );
 
@@ -154,23 +158,29 @@ mod fixed_price_sale_with_royalty {
             let mut royalty_map: HashMap<NonFungibleLocalId, Vault> = HashMap::new();
             let mut royalties: Vec<RoyaltyShare> = Vec::new();
             for (account_component, percentage) in royalty_accounts
-              .into_iter()
-              .zip(royalty_percents.into_iter()) {
-              let royalty: RoyaltyShare = RoyaltyShare { account_component, percentage };
-              royalties.push(royalty);
+                .into_iter()
+                .zip(royalty_percents.into_iter())
+            {
+                let royalty: RoyaltyShare = RoyaltyShare {
+                    account_component,
+                    percentage,
+                };
+                royalties.push(royalty);
             }
             for royalty in royalties.into_iter() {
-              let royalty_badge: NonFungibleBucket = NonFungibleBucket(royalty_badge_manager.mint_ruid_non_fungible(
-                royalty
-              ));
-              royalty_map.insert(royalty_badge.non_fungible_local_id(), Vault::new(accepted_payment_token));
+                let royalty_badge: NonFungibleBucket =
+                    NonFungibleBucket(royalty_badge_manager.mint_ruid_non_fungible(royalty));
+                royalty_map.insert(
+                    royalty_badge.non_fungible_local_id(),
+                    Vault::new(accepted_payment_token),
+                );
             }
 
             // When the owner of the NFT(s) instantiates a new fixed-price sale component, their tokens are taken away
             // from them and they're given an ownership NFT which is used to authenticate them and as proof of ownership
             // of the NFTs. This ownership badge can be used to either withdraw the funds from the token sale or the
             // NFTs if the seller is no longer interested in selling their tokens.
-            let ownership_badge: Bucket = ResourceBuilder::new_fungible(OwnerRole::None)
+            let ownership_badge: FungibleBucket = ResourceBuilder::new_fungible(OwnerRole::None)
                 .divisibility(DIVISIBILITY_NONE)
                 .metadata(metadata! (
                   init {
@@ -181,7 +191,7 @@ mod fixed_price_sale_with_royalty {
                 ))
                 .mint_initial_supply(1);
 
-            // Setting up the access rules for the component methods such that 
+            // Setting up the access rules for the component methods such that
             // only the owner of the ownership badge can make calls to the protected methods.
             // let access_rule: AccessRule = rule!(require(ownership_badge.resource_address()));
             // let access_rules_config: AccessRulesConfig = AccessRulesConfig::new()
@@ -201,17 +211,12 @@ mod fixed_price_sale_with_royalty {
             }
             .instantiate()
             .prepare_to_globalize(OwnerRole::None)
-            .roles(
-                roles!(
-                    admin => rule!(require(ownership_badge.resource_address()));
-                )
-            )
+            .roles(roles!(
+                admin => rule!(require(ownership_badge.resource_address()));
+            ))
             .globalize();
 
-            (
-              fixed_price_sale_with_royalty, 
-              ownership_badge
-            )
+            (fixed_price_sale_with_royalty, ownership_badge)
         }
 
         /// Used for buying the NFT(s) controlled by this component.
@@ -252,13 +257,16 @@ mod fixed_price_sale_with_royalty {
 
             // Loop through royalty percentages and pay out the royalties
             for (non_fungible_id, vault) in &mut self.royalties {
-                let royalty: RoyaltyShare = self.royalty_badge_resource_manager.get_non_fungible_data(&non_fungible_id);
+                let royalty: RoyaltyShare = self
+                    .royalty_badge_resource_manager
+                    .get_non_fungible_data(&non_fungible_id);
                 let amount_owed: Decimal = royalty.percentage * payment.amount();
                 vault.put(payment.take(amount_owed));
             }
 
             // Taking the price of the NFT(s) and putting it in the payment vault
-            self.payment_vault.put(payment.take(self.price - total_royalties_paid));
+            self.payment_vault
+                .put(payment.take(self.price - total_royalties_paid));
 
             // Creating a vector of buckets of all of the NFTs that the component has, then adding to it the remaining
             // tokens from the payment
@@ -415,7 +423,7 @@ mod fixed_price_sale_with_royalty {
                     self.nft_vaults
                         .get(&resource_address)
                         .unwrap()
-                        .non_fungible_local_ids()
+                        .non_fungible_local_ids(100)
                         .into_iter()
                         .collect::<Vec<NonFungibleLocalId>>(),
                 );
